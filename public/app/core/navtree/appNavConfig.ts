@@ -325,12 +325,40 @@ const APP_NAV_PATH_CONFIG: Record<string, AppNavPathConfig> = {
   },
 };
 
-/** The built-in nav config for an app plugin, if it has one */
+/**
+ * The nav config for an app plugin: the built-in entry with any operator
+ * [navigation.app_sections] override laid over it. Same merge as the Go
+ * builder's readNavigationSettings — the override wins on placement, its weight
+ * only when non-zero, and display overrides, hoisting and include filtering
+ * stay built-in.
+ */
 export function appNavConfigFor(appId: string): AppNavConfig | undefined {
-  return APP_NAV_CONFIG[appId];
+  const builtIn = APP_NAV_CONFIG[appId];
+  const override = config.navigation.appSections?.[appId];
+  if (!override) {
+    return builtIn;
+  }
+  return {
+    ...builtIn,
+    sectionId: override.sectionId,
+    sortWeight: override.sortWeight || builtIn?.sortWeight || 0,
+  };
 }
 
-/** The nav config for a standalone app page, if it has one */
+/**
+ * The nav config for a standalone app page. Unlike the app config above, an
+ * operator [navigation.app_standalone_pages] override replaces the built-in
+ * entry outright, as it does server-side.
+ */
 export function appNavPathConfigFor(includePath: string): AppNavPathConfig | undefined {
-  return APP_NAV_PATH_CONFIG[includePath];
+  const override = config.navigation.appStandalonePages?.[includePath];
+  return override ? { sortWeight: 0, ...override } : APP_NAV_PATH_CONFIG[includePath];
+}
+
+/** Whether a section id came from an operator override rather than our own tables */
+export function isOperatorPlacedSection(sectionId: string): boolean {
+  const { appSections = {}, appStandalonePages = {} } = config.navigation;
+  return [...Object.values(appSections), ...Object.values(appStandalonePages)].some(
+    (placement) => placement.sectionId === sectionId
+  );
 }
