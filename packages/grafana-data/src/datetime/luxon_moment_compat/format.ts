@@ -3,6 +3,7 @@ import { DateTime } from './luxon';
 const LOWER_MERIDIEM_FORMAT = "'__mls__'a'__mle__'";
 const ONE_TO_TWENTY_FOUR_HOUR_FORMAT = "'__khs__'H'__khe__'";
 const PADDED_ONE_TO_TWENTY_FOUR_HOUR_FORMAT = "'__khs__'HH'__khe__'";
+const QUARTER_END_MARKER = '__quarterEnd__';
 
 const TOKEN_MAP: Record<string, string> = {
   // moment's L* tokens are locale-aware (word order changes per locale), so map them to luxon's
@@ -21,10 +22,13 @@ const TOKEN_MAP: Record<string, string> = {
 
   YYYY: 'yyyy',
   YY: 'yy',
+  Q: `q'${QUARTER_END_MARKER}'`,
   MMMM: 'LLLL',
   MMM: 'LLL',
   MM: 'LL',
   M: 'L',
+  DDDD: 'ooo',
+  DDD: 'o',
   DD: 'dd',
   D: 'd',
   dddd: 'cccc',
@@ -59,6 +63,7 @@ const TOKEN_MAP: Record<string, string> = {
 
 const PARSING_TOKEN_MAP: Record<string, string> = {
   ...TOKEN_MAP,
+  Q: 'q',
   dd: 'ccc',
   d: 'c',
   kk: 'HH',
@@ -93,6 +98,7 @@ interface ConvertedFormat {
   hasMeridiem: boolean;
   hasOneToTwentyFourHour: boolean;
   hasWeekday: boolean;
+  hasQuarter: boolean;
 }
 
 // format conversion runs on every format() call in hot paths (table cells, axis ticks) and format
@@ -118,6 +124,7 @@ function convertFormat(format: string, omitZoneName = false, forParsing = false,
       hasMeridiem: luxonFormat.includes(MERIDIEM_START_MARKER),
       hasOneToTwentyFourHour: luxonFormat.includes(ONE_TO_TWENTY_FOUR_HOUR_MARKER),
       hasWeekday: luxonFormat.includes('__weekday'),
+      hasQuarter: luxonFormat.includes(QUARTER_END_MARKER),
     };
     convertedFormatCache.set(cacheKey, converted);
   }
@@ -191,7 +198,7 @@ function getOrdinal(day: number): string {
 }
 
 export function formatWithOrdinal(luxonDateTime: DateTime, momentFormat: string): string {
-  const { luxonFormat, hasOrdinal, hasMeridiem, hasOneToTwentyFourHour, hasWeekday } = convertFormat(
+  const { luxonFormat, hasOrdinal, hasMeridiem, hasOneToTwentyFourHour, hasWeekday, hasQuarter } = convertFormat(
     momentFormat,
     luxonDateTime.zone.type === 'system',
     false,
@@ -203,6 +210,11 @@ export function formatWithOrdinal(luxonDateTime: DateTime, momentFormat: string)
   // https://github.com/facebook/hermes/issues/1601
   // console.log(luxonDateTime.offsetNameShort);
   let formatted = luxonDateTime.toFormat(luxonFormat);
+
+  // Separate adjacent Moment Q tokens so Luxon does not interpret QQ as a padded quarter.
+  if (hasQuarter) {
+    formatted = formatted.replaceAll(QUARTER_END_MARKER, '');
+  }
 
   if (hasOrdinal) {
     formatted = formatted.replace(ORDINAL_MARKER_PATTERN, (_: string, rawDay: string) => {
